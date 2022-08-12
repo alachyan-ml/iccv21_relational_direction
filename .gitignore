@@ -1,2 +1,5 @@
 
 pretrained_models/
+*__pycache__*
+*.swp
+*.pkl

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jul 30 16:24:01 2020
+Created on Thu Jul 28 2022
 
-@author: badat
+@author: alachyankar
 """
 
 import os,sys
@@ -28,17 +28,30 @@ import pdb
 import gzip
 import json
 from core.helper.preprocessing_func import get_img_tensor_pad
+import pandas as pd
+from tqdm import tqdm
+import argparse
 #%%
 #import pdb
 #%%
-idx_GPU = 7
+idx_GPU = 1
 is_save = True
 #%%
 print("PyTorch Version: ",torch.__version__)
 print("Torchvision Version: ",torchvision.__version__)
 #%%
-img_dir = os.path.join(NFS_path,'data/hico_20160224_det/images/')
 #pdb.set_trace()
+
+parser = argparse.ArgumentParser()
+parser.add_argument('type', type=str, choices=["train", "validation"], default="train")
+parser.add_argument('--section', type=int, default=0)
+opt = parser.parse_args() 
+if (opt.type == "train"):
+    assert 0 <= opt.section <= 134
+else:
+    assert 0 <= opt.section <= 19
+
+
 # Models to choose from [resnet, alexnet, vgg, squeezenet, densenet, inception]
 model_name = "resnet"
 
@@ -62,24 +75,59 @@ for param in model_f.parameters():
 class CustomedDataset_pad(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, img_dir , mat_path, partition):
-        self.matcontent = sio.loadmat(mat_path)
+    def __init__(self, partition, section=0):
         self.partition = partition
-        self.anno = np.squeeze(self.matcontent['anno_{}'.format(partition)])
-        self.image_files = np.squeeze(self.matcontent['list_{}'.format(partition)])
-        self.img_dir = img_dir+'{}2015'.format(partition)
-#        self.transform = transform
+        self.anno_file = "data/epic_kitchens/epic-kitchens-100-annotations/EPIC_100_{}.csv".format(partition)
+        all_anno_file = "data/epic_kitchens/epic-kitchens-100-annotations/EPIC_100_train.csv"
+        all_anno = pd.read_csv(all_anno_file)
+        self.anno_values = self.init_values(all_anno)
+        self.anno = pd.read_csv(self.anno_file, nrows=500, skiprows=list(range(1,section*500)), header=0)
+        self.img_dir = "data/epic_kitchens/epic_images"
+        self.anno["total_length"] = self.calculate_total_length()
+        self.anno["max_index"] = self.anno["total_length"].cumsum()
+        self.anno_values.to_csv("data/epic_kitchens/epic_kitchens_hoi.csv".format(partition), index=False)
+
+    def init_values(self, anno):
+        values_df =  pd.DataFrame({"verb_class": anno["verb_class"], "noun_class": anno["noun_class"]})
+        dedup_values_df = values_df.drop_duplicates()
+        return dedup_values_df.sort_values(by=["verb_class", "noun_class"]).reset_index(drop=True)
+ 
+    def calculate_total_length(self):
+        print(self.anno.columns)
+        start_frame = self.anno["start_frame"]
+        end_frame = self.anno["stop_frame"]
+        return end_frame.sub(start_frame)
 
     def __len__(self):
-        return len(self.image_files)
+        return self.anno["max_index"].max()
 
     def __getitem__(self, idx):
-        image_file = self.image_files[idx][0]
-        image_path = os.path.join(self.img_dir,image_file)
-        label = self.anno[:,idx]
-        image = get_img_tensor_pad(image_path)
-        return image,label,image_file
+        last_indices = self.anno["max_index"].values
+        last_indices_under_idx = np.searchsorted(last_indices, idx, side='left')
+        last_index_row = self.anno.iloc[last_indices_under_idx]
 
+        image_path, image_file, video_id = self.get_img_by_idx(last_index_row, idx)
+        image = get_img_tensor_pad(image_path)
+        label = self.get_value_by_idx(last_index_row)
+        return image, label, image_file, video_id
+
+    def get_value_by_idx(self, last_index_row):
+        verb = last_index_row["verb_class"]
+        noun = last_index_row["noun_class"]
+        verb_noun_match = self.anno_values.index[(self.anno_values["verb_class"] == verb) & (self.anno_values["noun_class"] == noun)].tolist()
+        verb_noun_index = verb_noun_match[0]
+        verb_noun_zero_hot = np.zeros(self.anno_values.shape[0])
+        verb_noun_zero_hot[verb_noun_index] = 1
+        return verb_noun_zero_hot
+
+    def get_img_by_idx(self, last_idx_row, idx):
+        max_index_minus = last_idx_row["max_index"] - idx
+        frame = last_idx_row["stop_frame"] - max_index_minus
+        frame_file = "frame_{}.jpg".format("0" * (10-len(str(frame))) + str(frame))
+        file_path = "data/epic_kitchens/epic_images/{}/{}".format(last_idx_row["video_id"],frame_file)
+        return file_path, frame_file, last_idx_row["video_id"]
+
+        
 #%%
 def sanity_check(dict_a,dict_b):
     assert dict_a.keys() == dict_b.keys()
@@ -89,61 +137,70 @@ def sanity_check(dict_a,dict_b):
         else:
             assert dict_a[k] == dict_b[k]
 #%%   
-mat_path = os.path.join(NFS_path,'data/hico_20160224_det/anno.mat')
-HICODataset = CustomedDataset_pad(img_dir , mat_path, 'train')
-dataset_loader = torch.utils.data.DataLoader(HICODataset,
+
+print("Extracting features for {} dataset section {}".format(opt.type, opt.section))
+
+dataset = CustomedDataset_pad(opt.type, opt.section)
+
+dataset_loader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size, shuffle=False,
                                              num_workers=4)
 
 with torch.no_grad():
-    for i_batch, (imgs,labels,image_files) in enumerate(dataset_loader):
-        print(i_batch)
+    for i_batch, (imgs,labels,image_files, video_ids) in enumerate(tqdm(dataset_loader)):
+        #print(i_batch)
         imgs=imgs.to(device)
         features = model_f(imgs)
+        print("Features retrieved for batch {}".format(i_batch))
         for i_f in range(features.size(0)):
             feature = features[i_f].cpu().numpy()
             label = labels[i_f].cpu().numpy()
-            label[np.isnan(label)] = -2               #missing labels are annotated with -2
             
             image_file = image_files[i_f]
-            save_file = image_file.split(".")[0]+".pkl.gz"
+            video_id = video_ids[i_f]
+            save_file = "{}_{}.pkl.gz".format(video_id, image_file.split(".")[0])
+            save_file_path = "data/epic_kitchens/features_pad/{}".format(save_file)
+
             
             if is_save:
                 content = {'feature':feature,'label':label,'image_file':image_file} 
-                with gzip.open(NFS_path+"data/hico_20160224_det/features_pad/{}".format(save_file), 'wb') as f:
+                with gzip.open(save_file_path, 'wb') as f:
                     pickle.dump(content,f)
                 
                 ### need sanity check ### << load it back and compare the result
-                with gzip.open(NFS_path+"data/hico_20160224_det/features_pad/{}".format(save_file), 'rb') as f:
+                with gzip.open(save_file_path, 'rb') as f:
                     content_load = pickle.load(f)
-                sanity_check( content, content_load)
+                sanity_check(content, content_load)
 #%%
-mat_path = os.path.join(NFS_path,'data/hico_20160224_det/anno.mat')
-HICODataset = CustomedDataset_pad(img_dir , mat_path, 'test')
-dataset_loader = torch.utils.data.DataLoader(HICODataset,
-                                             batch_size=batch_size, shuffle=False,
-                                             num_workers=4)
-
-with torch.no_grad():
-    for i_batch, (imgs,labels,image_files) in enumerate(dataset_loader):
-        print(i_batch)
-        imgs=imgs.to(device)
-        features = model_f(imgs)
-        assert features.shape[-1] == 17
-        for i_f in range(features.size(0)):
-            feature = features[i_f].cpu().numpy()
-            
-            label = labels[i_f].cpu().numpy()
-            label[np.isnan(label)] = -2               #missing labels are annotated with -2
-            
-            image_file = image_files[i_f]
-            save_file = image_file.split(".")[0]+".pkl.gz"
-            if is_save:
-                content = {'feature':feature,'label':label,'image_file':image_file} 
-                with gzip.open(NFS_path+"data/hico_20160224_det/features_pad/{}".format(save_file), 'wb') as f:
-                    pickle.dump(content,f)
-                
-                ### need sanity check ### << load it back and compare the result
-                with gzip.open(NFS_path+"data/hico_20160224_det/features_pad/{}".format(save_file), 'rb') as f:
-                    content_load = pickle.load(f)
-                sanity_check( content, content_load)
+#val_dataset = CustomedDataset_pad('validation')
+#dataset_loader = torch.utils.data.DataLoader(val_dataset,
+#                                             batch_size=batch_size, shuffle=False,
+#                                             num_workers=4)
+#
+#with torch.no_grad():
+#    for i_batch, (imgs,labels,image_files, video_ids) in enumerate(tqdm(dataset_loader)):
+#        #print(i_batch)
+#        imgs=imgs.to(device)
+#        features = model_f(imgs)
+#        print("Features retrieved for batch {}".format(i_batch))
+#        for i_f in range(features.size(0)):
+#            feature = features[i_f].cpu().numpy()
+#            label = labels[i_f].cpu().numpy()
+#            
+#            image_file = image_files[i_f]
+#            video_id = video_ids[i_f]
+#            save_file = "{}_{}.pkl.gz".format(video_id, image_file.split(".")[0])
+#            save_file_path = "data/epic_kitchens/features_pad/{}".format(save_file)
+#
+#
+#            
+#            if is_save:
+#                content = {'feature':feature,'label':label,'image_file':image_file} 
+#                with gzip.open(save_file_path, 'wb') as f:
+#                    pickle.dump(content,f)
+#                
+#                ### need sanity check ### << load it back and compare the result
+#                with gzip.open(save_file_path, 'rb') as f:
+#                    content_load = pickle.load(f)
+#                sanity_check(content, content_load)
+#
