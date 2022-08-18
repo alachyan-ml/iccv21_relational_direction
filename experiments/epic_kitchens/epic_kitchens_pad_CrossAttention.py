@@ -28,12 +28,14 @@ import pdb
 import gzip
 import json
 import pandas as pd
-import time
+from datetime import datetime
 from torchvision.ops import roi_align
+from tqdm import tqdm
+import random
 #%%
 from core.dataset.Epic_pad_Dataset import Epic_pad_Dataset
 from core.model.CrossAttention import CrossAttention
-from core.helper.helper_func import get_bbox_features,evaluate_mAP,Logger,evaluate_k
+from core.helper.helper_func import get_bbox_features,evaluate_mAP,Logger,evaluate_k, compute_F1
 from core.helper.localize_eval import LocEvaluator_HICODet
 #%%
 import argparse
@@ -66,7 +68,7 @@ opt = parser.parse_args()
 python ./experiments/visual_genome_pad/1A/VG_pad_DAZLE_1A.py --idx_GPU 5 --save_folder 'trainable_w2v_no_normalize' --trainable_w2v True --normalize_V False
 '''
 #%%
-batch_size = 16
+batch_size = 30
 epochs = 10
 idx_GPU = opt.idx_GPU
 save_folder =  opt.save_folder
@@ -84,25 +86,26 @@ with open('./w2v/epic_kitchens_act_obj.pkl','rb') as f:
     content = pickle.load(f)
 #%%
 partition = opt.partition
-train_hicoDataset = Epic_pad_Dataset("train",content,section=0, pieces=10)
-test_hicoDataset = Epic_pad_Dataset('validation',content,section=0, pieces=10)
+train_Dataset = Epic_pad_Dataset("train",content)
+val_Dataset = Epic_pad_Dataset('validation',content)
 
-train_dataloader = torch.utils.data.DataLoader(train_hicoDataset,
+print("Creating Subset")
+subset_val = torch.utils.data.Subset(val_Dataset, random.sample(list(range(len(val_Dataset))), len(val_Dataset) // 10))
+
+train_dataloader = torch.utils.data.DataLoader(train_Dataset,
                                              batch_size=batch_size, shuffle=True,
                                              num_workers=4)
 
-test_dataloader = torch.utils.data.DataLoader(test_hicoDataset,
+test_dataloader = torch.utils.data.DataLoader(subset_val,
                                              batch_size=batch_size, shuffle=False,
                                              num_workers=4)
-k=3
-#evaluator = LocEvaluator_HICODet(dataloader=test_dataloader,num_processes=12,k=opt.loc_k)
 #%%
 model = CrossAttention(dim_f=2048,dim_v=300,
                  init_w2v_a=content['actions_w2v'],init_w2v_o=content['objects_w2v'],
                  Z_a=content['Z_a'],Z_o=content['Z_o'],
                  trainable_w2v_a = opt.trainable_w2v,trainable_w2v_o = opt.trainable_w2v, 
                  normalize_V_a = opt.normalize_V, normalize_V_o = opt.normalize_V, normalize_F = True,
-                 label_type = label_type, grid_size=train_hicoDataset.grid_size,
+                 label_type = label_type, grid_size=train_Dataset.grid_size,
                  lamb = opt.lamb, is_w2v_map = opt.is_w2v_map)
 
 device = torch.device("cuda:{}".format(idx_GPU) if torch.cuda.is_available() else "cpu")
@@ -120,61 +123,24 @@ for name,param in model.named_parameters():
         params_names.append(name)
         print("\t",name)
 #%%
-lr = 0.001
+lr = 0.0001
 weight_decay = 0.#0.0001
 momentum = 0.#0.#
 #%%
 optimizer  = optim.RMSprop( params_to_update ,lr=lr,weight_decay=weight_decay, momentum=momentum)
 #%%
-experiment_dir = 'results/{}/LOC_EpicKitchens_pad_CrossAttention_k_{}_{}_{}_GPU_{}_partition_{}_time_{}/'.format(save_folder,opt.loc_k,comment,label_type,idx_GPU,partition,str(time.time()).replace('.','d'))
+experiment_dir = 'results/{}/EpicKitchens_pad_CrossAttention_time_{}/'.format(save_folder, "{:%Y_%m_%d_%H_%M_%S}".format(datetime.now()))
 if is_save:
     os.makedirs(experiment_dir)
     with open(experiment_dir+'config.txt','w') as f:
         f.writelines(str(opt))
-# logger=Logger(experiment_dir+'stats.csv',['loss','mAP_all', 'mAP_seen', 'mAP_unseen','mAP_interact',
-#                                           'f1_5_all', 'f1_5_seen', 'f1_5_unseen', 'f1_5_interact',
-#                                           'f1_3_all', 'f1_3_seen', 'f1_3_unseen', 'f1_3_interact',
-#                                           'weight_cross_a','weight_cross_o'])
-# 
-# logger_part_F1_3 = Logger(experiment_dir+'partition_F1_3.csv',['1A','2A','1B','2B']) 
-# logger_part_F1_5 = Logger(experiment_dir+'partition_F1_5.csv',['1A','2A','1B','2B'])      
-# logger_part_AP = Logger(experiment_dir+'partition_AP.csv',['1A','2A','1B','2B']) 
-#     
-# logger_detail_hoi = Logger(experiment_dir+'detail_hoi.csv',['mAP_all', 'mAP_seen', 'mAP_unseen','mAP_interact','1A','2A','1B','2B'])
-# logger_detail_human = Logger(experiment_dir+'detail_human.csv',['mAP_all', 'mAP_seen', 'mAP_unseen','mAP_interact','1A','2A','1B','2B'])
-# logger_detail_object = Logger(experiment_dir+'detail_object.csv',['mAP_all', 'mAP_seen', 'mAP_unseen','mAP_interact','1A','2A','1B','2B'])
-# 
-# logger_ranking_k_3 = Logger(experiment_dir+'ranking_k_{}.csv'.format(opt.mll_k_3),['f1_3_all','p_3_all','r_3_all','f1_3_seen','p_3_seen','r_3_seen',
-#                                                          'f1_3_unseen','p_3_unseen','r_3_unseen','f1_3_interact','p_3_interact','r_3_interact'])
-#     
-# logger_ranking_k_5 = Logger(experiment_dir+'ranking_k_{}.csv'.format(opt.mll_k_5),['f1_5_all','p_5_all','r_5_all','f1_5_seen','p_5_seen','r_5_seen',
-#                                                          'f1_5_unseen','p_5_unseen','r_5_unseen','f1_5_interact','p_5_interact','r_5_interact'])
-# #%%
-# if partition == 'train_1A2B':
-#     seen_idxs = np.concatenate([train_hicoDataset.partition_1A,train_hicoDataset.partition_2B])
-#     unseen_idxs = np.concatenate([train_hicoDataset.partition_2A,train_hicoDataset.partition_1B])
-#     interact_idxs = np.concatenate([seen_idxs,unseen_idxs])
-# elif partition == 'train_1A': 
-#     seen_idxs = np.concatenate([train_hicoDataset.partition_1A]) 
-#     unseen_idxs = np.concatenate([train_hicoDataset.partition_2A,train_hicoDataset.partition_1B,train_hicoDataset.partition_2B]) 
-#     interact_idxs = np.concatenate([seen_idxs,unseen_idxs]) 
-# 
-# def package_mAP(AP,logger_detail):
-#     mAP_all, mAP_seen, mAP_unseen, mAP_interact = np.mean(AP),np.mean(AP[seen_idxs]),np.mean(AP[unseen_idxs]),np.mean(AP[interact_idxs])
-#     logger_detail.add([mAP_all, mAP_seen, mAP_unseen, mAP_interact,
-#                        np.mean(AP[train_hicoDataset.partition_1A]),np.mean(AP[train_hicoDataset.partition_2A]), 
-#                        np.mean(AP[train_hicoDataset.partition_1B]),np.mean(AP[train_hicoDataset.partition_2B])])
-#     
-#     print(logger_detail.df.iloc[-1])
-#     if is_save:
-#        logger_detail.save()
-    
+mAP_history = []
+loss_history = []
 for epoch in range(epochs):
-#    start_time = time.time()
     print("Epoch: {}".format(epoch))
     running_loss = 0
-    for i_batch, (arr_file_name,arr_feature_map,arr_label) in enumerate(train_dataloader):
-        print("Batch: {}".format(i_batch))
+    for i_batch, (arr_file_name,arr_feature_map,arr_label) in enumerate(tqdm(train_dataloader)):
+#        print("Batch: {}".format(i_batch))
         arr_feature_map = arr_feature_map.to(device)
         
         features=arr_feature_map #[B,K,C] == [brf]
@@ -192,113 +158,31 @@ for epoch in range(epochs):
         out_package=model(features)
         in_package = out_package
         in_package['labels'] = labels
-        
+#        print("in_package s:{}, labels: {}".format(in_package['s'].shape, in_package['labels'].shape))
         out_package = model.compute_loss(in_package)
-        
         loss = out_package['loss']
         
         loss.backward()
         optimizer.step()
         
+        print("Batch Loss: {}".format(loss.item()))
         running_loss += loss.item()
 
 
-        if i_batch % 25 == 0 and i_batch > 0:
-            print(i_batch)
-            print('Epoch: {}, Loss: {}'.format(epoch, running_loss / 25))
-            running_loss = 0
-            print(out_package)
+        if i_batch % 2500 == 0 and i_batch > 0:
+            print('Epoch: {}, Batch: {}, Running_Train_Loss: {}'.format(epoch, i_batch, running_loss / i_batch))
+            loss_history.append(running_loss / i_batch)
             AP,all_preds,all_labels=evaluate_mAP(test_dataloader,model,device)
-            print(np.mean(AP))
+            print("mAP: {}".format(np.mean(AP)))
+            mAP_history.append(np.mean(AP))
+            np.save(experiment_dir+'model_loss.npy', np.array(loss_history))
+            np.save(experiment_dir+'model_MAP.npy', np.array(mAP_history))
+            torch.save(model.state_dict(), experiment_dir+'model_{}_{}.pt'.format(epoch, i_batch))
 #             
-#             f1_3_all,p_3_all,r_3_all = evaluate_k(opt.mll_k_3, None, None, None, all_preds,all_labels) 
-#             f1_5_all,p_5_all,r_5_all = evaluate_k(opt.mll_k_5, None, None, None, all_preds,all_labels) 
-#              
-#             f1_3_seen,p_3_seen,r_3_seen = evaluate_k(opt.mll_k_3, None, None, None, all_preds[:,seen_idxs],all_labels[:,seen_idxs]) 
-#             f1_5_seen,p_5_seen,r_5_seen = evaluate_k(opt.mll_k_5, None, None, None, all_preds[:,seen_idxs],all_labels[:,seen_idxs]) 
-#              
-#             f1_3_unseen,p_3_unseen,r_3_unseen = evaluate_k(opt.mll_k_3, None, None, None, all_preds[:,unseen_idxs],all_labels[:,unseen_idxs]) 
-#             f1_5_unseen,p_5_unseen,r_5_unseen = evaluate_k(opt.mll_k_5, None, None, None, all_preds[:,unseen_idxs],all_labels[:,unseen_idxs]) 
-#              
-#             f1_3_interact,p_3_interact,r_3_interact = evaluate_k(opt.mll_k_3, None, None, None, all_preds[:,interact_idxs],all_labels[:,interact_idxs]) 
-#             f1_5_interact,p_5_interact,r_5_interact = evaluate_k(opt.mll_k_5, None, None, None, all_preds[:,interact_idxs],all_labels[:,interact_idxs]) 
-#             
-#             mAP_all, mAP_seen, mAP_unseen, mAP_interact = np.mean(AP),np.mean(AP[seen_idxs]),np.mean(AP[unseen_idxs]),np.mean(AP[interact_idxs])
-#             
-#             print("mAP_all: {} mAP_seen: {} mAP_unseen: {}, mAP_interact: {}".format(mAP_all, mAP_seen, mAP_unseen, mAP_interact))
-#             print("f1_5_all: {} f1_5_seen: {} f1_5_unseen: {} f1_5_interact {}".format(f1_5_all, f1_5_seen, f1_5_unseen, f1_5_interact))
-#             print("f1_3_all: {} f1_3_seen: {} f1_3_unseen: {} f1_3_interact {}".format(f1_3_all, f1_3_seen, f1_3_unseen, f1_3_interact))
-#             
-#             logger.add([loss.item(),mAP_all, mAP_seen, mAP_unseen,mAP_interact,
-#                         f1_5_all, f1_5_seen, f1_5_unseen, f1_5_interact,
-#                         f1_3_all, f1_3_seen, f1_3_unseen, f1_3_interact,
-#                         model.weight_cross_a.item(), model.weight_cross_o.item()])
-#     
-#             logger_ranking_k_3.add([f1_3_all,p_3_all,r_3_all,f1_3_seen,p_3_seen,r_3_seen,
-#                                     f1_3_unseen,p_3_unseen,r_3_unseen,f1_3_interact,p_3_interact,r_3_interact])
-#     
-#             logger_ranking_k_5.add([f1_5_all,p_5_all,r_5_all,f1_5_seen,p_5_seen,r_5_seen,
-#                                     f1_5_unseen,p_5_unseen,r_5_unseen,f1_5_interact,p_5_interact,r_5_interact])       
-#      
-#             full_1A = train_hicoDataset.partition_1A 
-#             full_2A = train_hicoDataset.partition_2A 
-#             full_1B = train_hicoDataset.partition_1B  
-#             full_2B = train_hicoDataset.partition_2B 
-#              
-#             f1_3_1A,_,_ = evaluate_k(opt.mll_k_3, None, None, None, all_preds[:,full_1A],all_labels[:,full_1A]) 
-#             f1_3_2A,_,_ = evaluate_k(opt.mll_k_3, None, None, None, all_preds[:,full_2A],all_labels[:,full_2A]) 
-#             f1_3_1B,_,_ = evaluate_k(opt.mll_k_3, None, None, None, all_preds[:,full_1B],all_labels[:,full_1B]) 
-#             f1_3_2B,_,_ = evaluate_k(opt.mll_k_3, None, None, None, all_preds[:,full_2B],all_labels[:,full_2B]) 
-#             logger_part_F1_3.add([f1_3_1A,f1_3_2A,f1_3_1B,f1_3_2B]) 
-#              
-#             f1_5_1A,_,_ = evaluate_k(opt.mll_k_5, None, None, None, all_preds[:,full_1A],all_labels[:,full_1A]) 
-#             f1_5_2A,_,_ = evaluate_k(opt.mll_k_5, None, None, None, all_preds[:,full_2A],all_labels[:,full_2A]) 
-#             f1_5_1B,_,_ = evaluate_k(opt.mll_k_5, None, None, None, all_preds[:,full_1B],all_labels[:,full_1B]) 
-#             f1_5_2B,_,_ = evaluate_k(opt.mll_k_5, None, None, None, all_preds[:,full_2B],all_labels[:,full_2B]) 
-#             logger_part_F1_5.add([f1_5_1A,f1_5_2A,f1_5_1B,f1_5_2B]) 
-#              
-#             logger_part_AP.add([np.mean(AP[full_1A]),np.mean(AP[full_2A]), 
-#                                 np.mean(AP[full_1B]),np.mean(AP[full_2B])]) 
-#             
-#             logger_ranking_k_3.add([f1_3_all,p_3_all,r_3_all,f1_3_seen,p_3_seen,r_3_seen,
-#                                     f1_3_unseen,p_3_unseen,r_3_unseen,f1_3_interact,p_3_interact,r_3_interact])
-#     
-#             logger_ranking_k_5.add([f1_5_all,p_5_all,r_5_all,f1_5_seen,p_5_seen,r_5_seen,
-#                                     f1_5_unseen,p_5_unseen,r_5_unseen,f1_5_interact,p_5_interact,r_5_interact]) 
-#     
-#             if is_save:
-#                 logger.save()
-#                 logger_ranking_k_3.save()
-#                 logger_ranking_k_5.save()
-#                 logger_part_AP.save() 
-#                 logger_part_F1_3.save()
-#                 logger_part_F1_5.save()
-#         
-#         if i_batch % 500 == 0:
-#             AP_hoi,AP_human,AP_object = evaluator.evaluate(model,device)
-#             
-#             print('hoi')
-#             package_mAP(AP_hoi,logger_detail_hoi)
-#             print('human')
-#             package_mAP(AP_human,logger_detail_human)
-#             print('object')
-#             package_mAP(AP_object,logger_detail_object)
-#             
-#             print("mAP_hoi {} mAP_human {} mAP_object {}".format(np.mean(AP_hoi),np.mean(AP_human),np.mean(AP_object)))
-# 
-# 
 #%%
 print("training finished")
 if is_save:
     torch.save(model.state_dict(), experiment_dir+'model_final.pt')
-#%%
-#if is_save:
-#    if label_type == 'action':    
-#        df = pd.DataFrame()
-#        df['act'] = pd.read_csv('./data/hico_20150920/act_list.csv')['act']
-#        df['AP'] = AP
-#        df.to_csv(experiment_dir+'breakdown_act.csv')
-#    elif label_type == 'interaction':
-#        df = pd.read_csv('./data/hico_20150920/hico_list_hoi.csv',header = None)
-#        df['AP'] = AP
-#        df.to_csv(experiment_dir+'breakdown_interaction.csv')
+    np.save(experiment_dir+'model_loss.npy', np.array(loss_history))
+    np.save(experiment_dir+'model_MAP.npy', np.array(mAP_history))
+

@@ -21,6 +21,7 @@ import gzip
 import json
 import pandas as pd
 import time
+from tqdm import tqdm
 from torchvision.ops import roi_align
 from sklearn.metrics import average_precision_score,f1_score,precision_score,recall_score
 from core.helper.helper_coordinate_func import attention_2_location
@@ -139,7 +140,7 @@ def compute_AP(predictions,labels,type):
 def evaluate_mAP(dataloader, model, device, type = 'realistic'):
     all_preds = []
     all_labels =[]
-    for i_batch, item in enumerate(dataloader):
+    for i_batch, item in enumerate(tqdm(dataloader)):
         arr_file_name,arr_feature_map,arr_label = item[:3]
         with torch.no_grad():
             model.eval()
@@ -201,6 +202,7 @@ def compute_F1(predictions,labels,mode_F1):
 #        print('evaluation overall!! cannot decompose into classes F1 score')
         mask = predictions == 1
         TP = np.sum(labels[mask]==1)
+        print("TP: {}, Mask: {}".format(TP, mask))
         p = TP/np.sum(mask)
         r = TP/np.sum(labels==1)
         f1 = 2*p*r/(p+r)
