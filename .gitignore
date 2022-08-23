@@ -3,3 +3,4 @@ pretrained_models/
 *__pycache__*
 *.swp
 *.pkl
+results/epic_kitchens_results/
