@@ -59,10 +59,7 @@ parser.add_argument('--trainable_w2v', type=str2bool, nargs='?', const=True, def
 parser.add_argument('--normalize_V', type=str2bool, nargs='?', const=True, default=True)
 parser.add_argument('--lamb', type=float, default=-1)
 parser.add_argument('--is_w2v_map', type=str2bool, nargs='?', const=True, default=True)
-parser.add_argument('--loc_k', type=int, default=3, help='')
-parser.add_argument('--mll_k_3', type=int, default=3)
-parser.add_argument('--mll_k_5', type=int, default=5)
-parser.add_argument('--partition', type=str, default='', help='')
+parser.add_argument("--lr", type=float, default=0.00001)
 opt = parser.parse_args() 
 '''
 python ./experiments/visual_genome_pad/1A/VG_pad_DAZLE_1A.py --idx_GPU 5 --save_folder 'trainable_w2v_no_normalize' --trainable_w2v True --normalize_V False
@@ -74,8 +71,6 @@ idx_GPU = opt.idx_GPU
 save_folder =  opt.save_folder
 label_type = "interaction"
 
-comment=opt.comment
-
 is_save = True
 
 print('-'*30)
@@ -85,7 +80,6 @@ print('-'*30)
 with open('./w2v/epic_kitchens_act_obj.pkl','rb') as f:
     content = pickle.load(f)
 #%%
-partition = opt.partition
 train_Dataset = Epic_pad_Dataset("train",content)
 val_Dataset = Epic_pad_Dataset('validation',content)
 
@@ -123,7 +117,7 @@ for name,param in model.named_parameters():
         params_names.append(name)
         print("\t",name)
 #%%
-lr = 0.0001
+lr = opt.lr
 weight_decay = 0.#0.0001
 momentum = 0.#0.#
 #%%
@@ -134,8 +128,11 @@ if is_save:
     os.makedirs(experiment_dir)
     with open(experiment_dir+'config.txt','w') as f:
         f.writelines(str(opt))
+
 mAP_history = []
-loss_history = []
+epoch_loss_history = []
+batch_loss_history = []
+
 for epoch in range(epochs):
     print("Epoch: {}".format(epoch))
     running_loss = 0
@@ -166,16 +163,21 @@ for epoch in range(epochs):
         optimizer.step()
         
         print("Batch Loss: {}".format(loss.item()))
+        batch_loss_history.append(loss.item())
+
+        if i_batch % 100 == 0 and i_batch > 0:
+            np.save(experiment_dir+'batch_loss.npy', np.array(batch_loss_history))
+
         running_loss += loss.item()
 
 
-        if i_batch % 2500 == 0 and i_batch > 0:
+        if i_batch % 1000 == 0 and i_batch > 0:
             print('Epoch: {}, Batch: {}, Running_Train_Loss: {}'.format(epoch, i_batch, running_loss / i_batch))
-            loss_history.append(running_loss / i_batch)
+            epoch_loss_history.append(running_loss / i_batch)
             AP,all_preds,all_labels=evaluate_mAP(test_dataloader,model,device)
             print("mAP: {}".format(np.mean(AP)))
             mAP_history.append(np.mean(AP))
-            np.save(experiment_dir+'model_loss.npy', np.array(loss_history))
+            np.save(experiment_dir+'model_loss.npy', np.array(epoch_loss_history))
             np.save(experiment_dir+'model_MAP.npy', np.array(mAP_history))
             torch.save(model.state_dict(), experiment_dir+'model_{}_{}.pt'.format(epoch, i_batch))
 #             

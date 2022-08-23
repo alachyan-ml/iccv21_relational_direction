@@ -72,7 +72,8 @@ class CrossAttention(nn.Module):
              
         self.log_softmax_func = nn.LogSoftmax(dim=1)     
         self.bce_criterion = nn.BCEWithLogitsLoss(reduction = 'none')     
-          
+        self.ce_criterion = nn.CrossEntropyLoss()
+
         if self.is_cross: 
             ### cross-attention ###   
             self.object2actor_gaussian = NeuralNet(D_in = self.dim_v+self.dim_f+2,   
@@ -142,21 +143,25 @@ class CrossAttention(nn.Module):
              
     def binary_cross_entropy(self,s,labels):
 
-        labels = labels.float()      
+        labels = labels.long()      
               
-        indicator = labels.clone()      
-        indicator[indicator<1] = 0      
+        indicator = labels.clone()
+        #indicator[indicator<1] = 0      
+        
+        class_labels = torch.argmax(indicator, dim=1)
+            
+        #print("Class Label: {}, Target Shape: {}".format(class_labels, class_labels.shape))
+
+        loss = self.ce_criterion(s,class_labels)      
               
-        loss = self.bce_criterion(s,indicator)      
-              
-        mask = loss.new_ones(loss.shape).to(loss.device)      
+        #mask = loss.new_ones(loss.shape).to(loss.device)      
            
-        mask = mask.masked_fill(labels == 0, 0)      
+        #mask = mask.masked_fill(labels == 0, 0)      
               
-        loss = torch.einsum('bk,bk->b',mask,loss)      
-        label_count = torch.einsum('bk->b',mask)      
+        #loss = torch.einsum('bk,bk->b',mask,loss)      
+        #label_count = torch.einsum('bk->b',mask)      
               
-        loss = torch.mean(loss/label_count)      
+        #loss = torch.mean(loss/label_count)      
               
         return loss  
     
