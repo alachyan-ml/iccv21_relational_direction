@@ -88,4 +88,4 @@ class Epic_pad_Dataset(Dataset):
         shape = feature.shape
         assert shape[-1] == shape[-2] == self.grid_size
                 
-        return image_file,feature,label_one_hot
+        return feature_path,feature,label_one_hot
