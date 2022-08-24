@@ -27,10 +27,10 @@ mkdir data/epic_kitchens/features_pad
 python ./extract_feature/epic_kitchens/epic_extract_feature_map_ResNet_152_padding.py [type] --size [size] --split [split] --part [part]    
 ```
 Where 
-    - `type` is one of [train, validation].
-    - `size` is the number of frames to skip per annotation frame grabbed.
-    - `split` is the number of pieces to split the full feature set into. This allows for running concurrent feature extraction on the extremely large dataset. 
-    - `part` is the part of the splits to extract features from. Number must be between [0, split-1].
+- `type` is one of [train, validation].
+- `size` is the number of frames to skip per annotation frame grabbed.
+- `split` is the number of pieces to split the full feature set into. This allows for running concurrent feature extraction on the extremely large dataset. 
+- `part` is the part of the splits to extract features from. Number must be between [0, split-1].
 
 as well as word embedding for zero-shot learning:
 ```
@@ -46,10 +46,10 @@ python ./experiments/epic_kitchens/epic_kitchens_pad_CrossAttention.py --idx_GPU
 ```
 
 Where:
-    - `gpu` is the gpu number that the model will train on
-    - `save_folder` is the location under `./results` for the results to be placed. Suggested value is `epic_kitchens_results`.
-    - `lr` is the learning rate. any number under 0.001 is usually suggested. 
-    - `model_path` is the path to the model checkpoint that can be used by the training loop. 
+- `gpu` is the gpu number that the model will train on
+- `save_folder` is the location under `./results` for the results to be placed. Suggested value is `epic_kitchens_results`.
+- `lr` is the learning rate. any number under 0.001 is usually suggested. 
+- `model_path` is the path to the model checkpoint that can be used by the training loop. 
 
 There are other options in the source code, but those are left default. 
 
