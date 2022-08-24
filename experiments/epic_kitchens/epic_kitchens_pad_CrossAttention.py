@@ -52,14 +52,13 @@ def str2bool(v):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--idx_GPU', type=int, default=0, help='')
-parser.add_argument('--save_folder', type=str, default='', help='')
+parser.add_argument('--save_folder', type=str, default='epic_kitchens_results', help='')
 parser.add_argument('--load_model', type=str, default='', help='')
-parser.add_argument('--comment', type=str, default='', help='')
 parser.add_argument('--trainable_w2v', type=str2bool, nargs='?', const=True, default=True)
 parser.add_argument('--normalize_V', type=str2bool, nargs='?', const=True, default=True)
 parser.add_argument('--lamb', type=float, default=-1)
 parser.add_argument('--is_w2v_map', type=str2bool, nargs='?', const=True, default=True)
-parser.add_argument("--lr", type=float, default=0.00001)
+parser.add_argument("--lr", type=float, default=0.0001)
 opt = parser.parse_args() 
 '''
 python ./experiments/visual_genome_pad/1A/VG_pad_DAZLE_1A.py --idx_GPU 5 --save_folder 'trainable_w2v_no_normalize' --trainable_w2v True --normalize_V False
