@@ -3,6 +3,14 @@
 Created on Thu Jul 23 2022
 
 @author: alachyankar
+
+This file defines the Custom Dataset Epic_pad_Dataset. 
+
+This dataset is used by the training loop to gather the word2vector and image extracted features. 
+
+Dataset defines a length and __getitem__ method as defined by the interface. 
+
+This is done here to provide the file name of the pickle file, the image features, and the one-hot encoded interaction label. 
 """
 
 import torch
@@ -34,7 +42,6 @@ class Epic_pad_Dataset(Dataset):
         
         self.partition = partition
         self.hoi = pd.read_csv('data/epic_kitchens/epic_kitchens_hoi.csv')
- #       print("HOI SHAPE: {}".format(self.hoi.shape))
         self.mask = np.zeros(len(self.hoi)) 
         self.content = content
         
@@ -44,11 +51,6 @@ class Epic_pad_Dataset(Dataset):
         self.i2o = np.argmax(self.content['Z_o'],axis=-1).astype(np.int32)
         self.len_o = self.content['Z_o'].shape[-1]
         
-#        self.anno_file = "data/epic_kitchens/epic-kitchens-100-annotations/EPIC_100_{}.csv".format(partition) 
-
-#        self.samples = pd.read_csv(self.anno_file, nrows = pieces, skiprows = range(1,(section*pieces)), header=0)
-#        self.samples["total_length"] = self.calculate_total_length()
-#        self.samples["max_index"] = self.samples["total_length"].cumsum()
 
 
         self.feature_dir = 'data/epic_kitchens/features_pad/{}'.format(partition)
@@ -57,7 +59,6 @@ class Epic_pad_Dataset(Dataset):
         self.image_dir = 'data/epic_kitchens/epic_images'
     
     def calculate_total_length(self):
-        #print("Columns: {}".format(self.samples.columns))
         start_frame = self.samples["start_frame"]
         end_frame = self.samples["stop_frame"]
         return end_frame.sub(start_frame)
@@ -80,7 +81,6 @@ class Epic_pad_Dataset(Dataset):
         
         feature,label,image_file = content_load["feature"],content_load["label"],content_load["image_file"]
         
-        #print("Feature File: {}, LABEL: {}".format(feature_path, label))
         
         label_one_hot = np.zeros(self.hoi.shape[0])
         label_one_hot[label] = 1

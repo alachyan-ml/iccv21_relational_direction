@@ -3,6 +3,14 @@
 Created on Thu Jul 28 2022
 
 @author: alachyankar
+
+This file defines the image feature extraction script. 
+
+Each image that is part of an annotated segment in a video is taken and passed to a Resnet-152 model. 
+The 2nd to last layer is taken from the model and used as image features.
+Along with this, all interactions are extracted from the training data and each possible interaction is set to a one-hot encoded vector. 
+
+These 2 features are then saved as a pickle file to be used later in training. 
 """
 
 import os,sys

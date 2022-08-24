@@ -57,7 +57,7 @@ There are other options in the source code, but those are left default.
 The `Model_Analysys.ipynb` folder contains some analysis regarding the latest experiment. 
 
 To utilize this notebook, change the `experiment_dir` value in the first cell to the path to the `save_folder` location from the experiment that was recently run. 
-If evaluating the last trained model, set `chosen_experiment` in cell 2 to `newest_experiment` if evaluating a previous experiment, change `n` in the first cell to the nth to last experiment and set `chosen experiment` to `nth_experiment`.
+If evaluating the last trained model, set `chosen_experiment` in cell 2 to `newest_experiment`. If evaluating a previous experiment, change `n` in the first cell to the nth to last experiment and set `chosen experiment` to `nth_experiment`.
 
 This model will plot the loss graphs for the model, print the last mAP during training, and then run a validation loop on a randomly selected subset of the data. 
 Then the notebook will generate a visualization that shows images that were correctly and incorrectly predicted along with the action and object attention map. 

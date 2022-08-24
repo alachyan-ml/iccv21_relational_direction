@@ -3,6 +3,14 @@
 Created on Sat Aug 1 2022
 
 @author: alachyankar
+
+This file defines the main training loop for the Epic Kitchens dataset. 
+
+The training and validation loop are initialized and training features are passed to the model in batches of 30. 
+
+After 1000 batches, a validation run is done to check the performance of the model and the loss and mAP are saved in .npy files. 
+
+A checkpoint file is also created by the validation run to use for future training or evaluation. 
 """
 
 import os,sys

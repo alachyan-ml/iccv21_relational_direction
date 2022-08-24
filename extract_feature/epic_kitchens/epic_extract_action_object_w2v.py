@@ -3,6 +3,12 @@
 Created on Thu Jul 29 2022
 
 @author: alachyankar
+
+This file defines the word2vec feature extraction script. 
+
+Each noun and each action is converted to a vectorized form using the word2vec-google-news-300 model from gensim.
+
+Words with 2 parts are summed together after converting each word in the noun or action with word2vec. 
 """
 import os,sys
 pwd = os.getcwd()
@@ -26,7 +32,6 @@ print('Done loading model')
 #%%
 replace_word = [('','')]
 #%%
-
 
 def init_values(anno):
     values_df =  pd.DataFrame({"verb_class": anno["verb_class"], "noun_class": anno["noun_class"]})
